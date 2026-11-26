@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新春晚宴座位查詢</title>
+<style>
+  :root { --red:#C8102E; --gold:#D4A017; --bg:#FFF8EE; --card:#fff; --text:#2b2b2b; --muted:#777; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; background:var(--bg); color:var(--text); }
+  header { background:linear-gradient(135deg,var(--red),#9b0c22); color:#fff; padding:22px 16px; text-align:center; }
+  header h1 { margin:0; font-size:1.6rem; letter-spacing:2px; }
+  header p { margin:6px 0 0; opacity:.9; font-size:.95rem; }
+  main { max-width:720px; margin:0 auto; padding:16px; }
+  .tabs { display:flex; gap:8px; margin-bottom:14px; }
+  .tab { flex:1; padding:12px; border:none; border-radius:10px; background:#f1e4cc; color:var(--text); font-size:1rem; cursor:pointer; font-weight:600; }
+  .tab.active { background:var(--red); color:#fff; }
+  .panel { display:none; } .panel.active { display:block; }
+  input, select { width:100%; padding:13px 14px; font-size:1.05rem; border:2px solid #e3cfa8; border-radius:10px; background:#fff; }
+  input:focus, select:focus { outline:none; border-color:var(--red); }
+  .row { display:flex; gap:8px; margin-bottom:12px; }
+  .status { font-size:.85rem; color:var(--muted); margin:6px 0 12px; }
+  .card { background:var(--card); border-radius:14px; padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(0,0,0,.07); border-left:6px solid var(--gold); display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .card .name { font-size:1.25rem; font-weight:700; }
+  .card .title { font-size:.95rem; color:var(--text); margin-top:2px; }
+  .card .company { font-size:.95rem; color:var(--text); margin-top:2px; }
+  .card .meta { font-size:.85rem; color:var(--muted); margin-top:6px; }
+  .tag { display:inline-block; background:#f7ecd3; color:#7a5a00; border-radius:6px; padding:2px 8px; margin:4px 4px 0 0; font-size:.8rem; }
+  .table-box { text-align:center; min-width:92px; background:var(--red); color:#fff; border-radius:12px; padding:10px 8px; }
+  .table-box .t { font-size:.75rem; opacity:.9; }
+  .table-box .n { font-size:1.8rem; font-weight:800; line-height:1.1; }
+  .group { margin-bottom:18px; }
+  .group h3 { margin:6px 0 8px; color:var(--red); border-bottom:2px solid var(--gold); padding-bottom:4px; }
+  .mini { background:#fff; border-radius:10px; padding:10px 12px; margin-bottom:6px; font-size:.95rem; }
+  .mini .top { display:flex; justify-content:space-between; gap:8px; }
+  .mini .sub { font-size:.85rem; color:var(--muted); margin-top:3px; }
+  .empty { text-align:center; color:var(--muted); padding:30px 10px; }
+  .err { background:#fde2e2; color:#8b0000; padding:12px; border-radius:10px; margin-bottom:12px; font-size:.92rem; line-height:1.6; }
+  .note { font-size:.78rem; color:var(--muted); text-align:center; margin-top:20px; line-height:1.6; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧧 新春晚宴座位查詢 🧧</h1>
+  <p>輸入賓客姓名，即可查到您的桌號</p>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab active" data-tab="byName">查賓客</button>
+    <button class="tab" data-tab="byTable">查桌次</button>
+  </div>
+
+  <div id="statusArea"></div>
+
+  <!-- 查賓客姓名 -->
+  <section id="byName" class="panel active">
+    <div class="row">
+      <input id="q" type="search" placeholder="請輸入賓客姓名（可輸入部分字）" autocomplete="off">
+    </div>
+    <div id="nameResults"></div>
+  </section>
+
+  <!-- 查桌次 -->
+  <section id="byTable" class="panel">
+    <div class="row">
+      <select id="tableSelect"></select>
+    </div>
+    <div id="tableResults"></div>
+  </section>
+
+  <p class="note">資料來源：Google 雲端硬碟中的座位表（以試算表開啟）<br>如有錯誤請洽現場工作人員。</p>
+</main>
+
+<script>
+/* ==================== 設定區 ==================== */
+// 1. 把 Excel 上傳到 Google 雲端硬碟 → 用「Google 試算表」開啟 → 另存為正式的試算表
+// 2. 共用：右上角「共用」→「一般存取權：知道連結的任何人（檢視者）」
+// 3. 網址列 https://docs.google.com/spreadsheets/d/【這一段就是ID】/edit 把ID貼在下方
+//
+// 試算表欄位順序（第一列標題需完全一致）：
+// 桌號、公司別、邀約部門、公司、賓客姓名、職稱、備註
+const CONFIG = {
+  SHEET_ID: "",              // 例：'1AbCdEfGhIjKlMnOpQrStUvWxYz'；留空則使用示範資料
+  SHEET_NAME: "賓客名單",     // Excel 裡工作表（分頁）的名稱
+  REFRESH_SECONDS: 60        // 每幾秒自動更新資料
+};
+
+// 示範資料（正式使用時請設定 SHEET_ID）
+const DEMO_CSV = `桌號,公司別,邀約部門,公司,賓客姓名,職稱,備註
+1,科技業,業務部,某某科技股份有限公司,王小明,總經理,素食
+1,科技業,業務部,某某科技股份有限公司,李美華,協理,
+2,金融業,財務部,示範金融控股,張志偉,副總,
+2,金融業,人資部,示範金融控股,陳雅琪,經理,無辣
+3,製造業,工程部,大發工業股份有限公司,林建國,廠長,需要輪椅通道
+3,製造業,採購部,大發工業股份有限公司,黃淑芬,課長,
+4,服務業,行銷部,優質生活顧問有限公司,吳俊傑,執行長,
+4,服務業,企劃部,優質生活顧問有限公司,蔡佩珊,主任,`;
+
+// 欄位定義（順序即試算表欄位順序）
+const FIELDS = [
+  { key: "table",   label: "桌號" },
+  { key: "ctype",   label: "公司別" },
+  { key: "dept",    label: "邀約部門" },
+  { key: "company", label: "公司" },
+  { key: "name",    label: "賓客姓名" },
+  { key: "title",   label: "職稱" },
+  { key: "note",    label: "備註" }
+];
+
+/* ==================== 工具函式 ==================== */
+function parseCSV(text) {
+  const rows = []; let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"' && text[i+1] === '"') { field += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else field += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { row.push(field); field = ""; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (c !== '\r') field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ""));
+}
+
+function toGuests(text) {
+  const rows = parseCSV(text.replace(/^\uFEFF/, ""));
+  if (!rows.length) return [];
+  const head = rows[0].map(h => h.trim());
+  const col = {};
+  FIELDS.forEach(f => { col[f.key] = head.indexOf(f.label); });
+  if (col.name < 0 || col.table < 0) {
+    throw new Error("找不到必要欄位：「賓客姓名」與「桌號」，請確認試算表第一列標題。");
+  }
+  const get = (r, key) => (col[key] >= 0 ? (r[col[key]] || "").trim() : "");
+  return rows.slice(1).map(r => ({
+    table:   get(r, "table"),
+    ctype:   get(r, "ctype"),
+    dept:    get(r, "dept"),
+    company: get(r, "company"),
+    name:    get(r, "name"),
+    title:   get(r, "title"),
+    note:    get(r, "note")
+  })).filter(g => g.name);
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+}
+
+function tableNum(t) { const n = parseFloat(t); return isNaN(n) ? 9999 : n; }
+
+function setStatus(msg, isErr) {
+  document.getElementById("statusArea").innerHTML =
+    isErr ? `<div class="err">${esc(msg)}</div>` : `<div class="status">${esc(msg)}</div>`;
+}
+
+/* ==================== 資料載入 ==================== */
+let guests = [];
+
+async function loadData() {
+  try {
+    let text;
+    if (CONFIG.SHEET_ID) {
+      const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}&t=${Date.now()}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error("無法讀取試算表（HTTP " + res.status + "）");
+      text = await res.text();
+      if (text.trim().startsWith("<")) throw new Error("無法讀取：請確認試算表已設為「知道連結的任何人可檢視」，且工作表名稱正確。");
+      setStatus(`已連線 Google 雲端硬碟｜最後更新 ${new Date().toLocaleTimeString("zh-TW")}`);
+    } else {
+      text = DEMO_CSV;
+      setStatus("目前為示範資料（尚未設定 SHEET_ID）");
+    }
+    guests = toGuests(text);
+    renderTableOptions();
+    renderNames();
+    renderTables();
+  } catch (e) {
+    setStatus("載入失敗：" + e.message, true);
+  }
+}
+
+/* ==================== 查賓客姓名 ==================== */
+function guestCard(g) {
+  const tags = [g.ctype, g.dept].filter(Boolean).map(x => `<span class="tag">${esc(x)}</span>`).join("");
+  return `
+  <div class="card">
+    <div>
+      <div class="name">${esc(g.name)}</div>
+      ${g.title ? `<div class="title">${esc(g.title)}</div>` : ""}
+      ${g.company ? `<div class="company">${esc(g.company)}</div>` : ""}
+      ${tags ? `<div>${tags}</div>` : ""}
+      ${g.note ? `<div class="meta">備註：${esc(g.note)}</div>` : ""}
+    </div>
+    <div class="table-box">
+      <div class="t">桌號</div>
+      <div class="n">${esc(g.table)}</div>
+    </div>
+  </div>`;
+}
+
+function renderNames() {
+  const kw = document.getElementById("q").value.trim().toLowerCase();
+  const box = document.getElementById("nameResults");
+  if (!kw) { box.innerHTML = `<div class="empty">請輸入賓客姓名開始查詢</div>`; return; }
+  const hits = guests.filter(g => g.name.toLowerCase().includes(kw));
+  if (!hits.length) { box.innerHTML = `<div class="empty">查無「${esc(kw)}」，請確認姓名或洽現場人員。</div>`; return; }
+  box.innerHTML = hits.map(guestCard).join("");
+}
+
+/* ==================== 查桌次 ==================== */
+function renderTableOptions() {
+  const sel = document.getElementById("tableSelect");
+  const prev = sel.value;
+  const tables = [...new Set(guests.map(g => g.table))].sort((a,b) => tableNum(a) - tableNum(b) || a.localeCompare(b));
+  sel.innerHTML = `<option value="">請選擇桌號</option>` + tables.map(t => `<option value="${esc(t)}">第 ${esc(t)} 桌</option>`).join("");
+  if (tables.includes(prev)) sel.value = prev;
+}
+
+function renderTables() {
+  const t = document.getElementById("tableSelect").value;
+  const box = document.getElementById("tableResults");
+  if (!t) { box.innerHTML = `<div class="empty">請選擇桌號</div>`; return; }
+  const list = guests.filter(g => g.table === t)
+    .sort((a,b) => (a.company||"").localeCompare(b.company||"", "zh-Hant") || (a.name||"").localeCompare(b.name||"", "zh-Hant"));
+  box.innerHTML = `
+    <div class="group">
+      <h3>第 ${esc(t)} 桌（共 ${list.length} 位）</h3>
+      ${list.map(g => `
+        <div class="mini">
+          <div class="top"><b>${esc(g.name)}</b><span>${esc(g.title)}</span></div>
+          <div class="sub">${esc(g.company)}${g.ctype ? "｜" + esc(g.ctype) : ""}${g.dept ? "｜" + esc(g.dept) : ""}${g.note ? "｜備註：" + esc(g.note) : ""}</div>
+        </div>`).join("")}
+    </div>`;
+}
+
+/* ==================== 介面事件 ==================== */
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.add("active");
+  });
+});
+document.getElementById("q").addEventListener("input", renderNames);
+document.getElementById("tableSelect").addEventListener("change", renderTables);
+
+loadData();
+setInterval(loadData, CONFIG.REFRESH_SECONDS * 1000);
+</script>
+</body>
+</html>
